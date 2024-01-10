@@ -25,11 +25,22 @@ char mqtt_pass[] = SECRET_MQTT_PASS;
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
-// Define class, this function is build after the loop function
+// Pre-defined function, this function is build after the loop function
 void eclipseReceived(int messageSize);
 
-// Global connection status, by default false upon running code
-bool connected = false;
+// Pre-defined function, this function will send sensor data to the MQTT broker
+void eclipseSensorMessage(int humi, const String& temp, int conn);
+
+// Pre-defined function, this function serves to send log level messages to the MQTT broker
+void eclipseLogMessage (const String& status, const int& time, const String& context);
+
+// Pre-defined function, this function serves to check the Wi-Fi connection
+void connStatus();
+
+bool connected = false; // Global connection status, by default false upon running code
+int signalStrength; // Global signal strength value, no default value
+String status; // Global connection status string, no default value
+int disconnectedTime = 0; // Global integer for saving the amount of time the Wi-Fi was disconnected in seconds
 // Function for connecting arduino to Wi-Fi
 void connectWifi() {
     // Check arduino EPS32 firmware version
@@ -123,6 +134,30 @@ void loop() {
     // Loop delay
     delay(2000);
 
+    // If the Wi-Fi was disconnected at this point run a while loop until connection has been re-established
+    while (!connected) {
+        connStatus();
+
+        delay(2000);
+
+        disconnectedTime = disconnectedTime + 2;
+
+    }
+
+    if (disconnectedTime != 0) {
+        eclipseLogMessage(
+                "WiFi disconnected",
+                (int)disconnectedTime,
+                (String) "Wifi connection was lost, time (seconds) offline is " + disconnectedTime);
+        disconnectedTime  = 0;
+    }
+
+    // Check if broker is still connected to the arduino
+    if (!mqttClient.connected()) {
+        // If broker is disconnected then attempt to re-connect o the broker
+        connectBroker();
+    }
+
     // Checks if there are any messages from the MQTT
     // Also sends out a pulse so the connection will not be broken due to inactivity
     mqttClient.poll();
@@ -146,6 +181,12 @@ void loop() {
         Serial.println("Humidity: " + humiString);
         Serial.println("Temperature: " + Temp);
         Serial.println();
+
+        // check connection before sending anything to the MQTT broker
+        connStatus();
+
+        // Send message contents to the function below, it will then be formatted and send to the MQTT broker
+        eclipseSensorMessage((int) humi, String(tempC, 1), signalStrength);
 
     }
 
@@ -183,5 +224,89 @@ void eclipseReceived(int messageSize) {
 
     Serial.print("Message: ");
     Serial.println(message);
+
+}
+
+// This function sends the sensor data to the MQTT broker
+void eclipseSensorMessage (int humi, const String& temp, int conn) {
+
+    // Prepare json document
+    StaticJsonDocument<200> doc;
+
+    // Fill json document with the needed values
+    doc["humidity"] = humi;
+    doc["temperature"] = temp;
+    doc["conn"] = conn;
+
+    // Prepare json for sending it to the MQTT broker
+    char jsonBuffer[512];
+    serializeJsonPretty(doc, jsonBuffer); // print to client
+
+    // Send the serialized data to the MQTT broker on the given topic
+    mqttClient.beginMessage("/sensor/arduino");
+    mqttClient.print(jsonBuffer);
+    mqttClient.endMessage();
+
+}
+
+// Function for getting the connection status and strength
+void connStatus() {
+
+    // Get wifi signal strength
+    signalStrength = (int) WiFi.RSSI();
+
+    // Set the global signal status to the string converted signal strength
+    status = (String) signalStrength;
+
+    // Check if the Wi-Fi is disconnected
+    if (WiFi.status() == 0) {
+
+        // If the Wi-Fi is disconnected  set the status to "DISCONNECTED" and set the connected value to False
+        status = "DISCONNECTED";
+        connected = false;
+
+    }
+
+    // If the wifi is disconnected (determent by previous if statement) execute the following code
+    if (!connected && WiFi.status() != 0) {
+        // To be safe, disconnect arduino Wi-Fi (will not return errors if already disconnected)
+        WiFi.disconnect();
+        Serial.println();
+
+        // Call connect to Wi-Fi function in order to attempt reconnection
+        connectWifi();
+
+        // If wifi connection is established try to reconnect the MQTT broker
+        connectBroker();
+
+        // If all connections are re-established set the connected value to True
+        connected = true;
+    }
+
+}
+
+// This function serves to send messages to the "log" topic, this topic usually contains status messages
+void eclipseLogMessage (
+        const String& status,
+        const int& time,
+        const String& context
+) {
+
+    // Prepare json doc
+    StaticJsonDocument<200> doc;
+
+    // Fill json doc
+    doc["status"] = status;
+    doc["time"] = time;
+    doc["context"] = context;
+
+    // Serialize json doc for MQTT
+    char jsonBuffer[512];
+    serializeJsonPretty(doc, jsonBuffer); // print to client
+
+    // Publish serialized json doc to the /log topic
+    mqttClient.beginMessage("/log/arduino");
+    mqttClient.print(jsonBuffer);
+    mqttClient.endMessage();
 
 }
