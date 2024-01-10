@@ -12,7 +12,7 @@
 // Stores the bitmap images fo the oled screen
 #include <bitmap.cpp>
 
-// DSetupDHT-11 (KY-015)
+// SetupDHT-11 (KY-015)
 #define DHT11_PIN 2
 DHT dht11(DHT11_PIN, DHT11);
 
@@ -23,8 +23,8 @@ DHT dht11(DHT11_PIN, DHT11);
 Adafruit_SSD1306 oledDisplay(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Name and password off the Wi-Fi connection respectively
-char ssid[] = SECRET_WIFI_SSID;    // your network SSID (name)
-char pass[] = SECRET_WIFI_PASS;    // your network password
+char ssid[] = SECRET_WIFI_SSID;    // Network SSID (name)
+char pass[] = SECRET_WIFI_PASS;    // Network password
 
 // Name and password for the MQTT broker respectively
 char mqtt_user[] = SECRET_MQTT_USER;
@@ -50,6 +50,7 @@ bool connected = false; // Global connection status, by default false upon runni
 int signalStrength; // Global signal strength value, no default value
 String status; // Global connection status string, no default value
 int disconnectedTime = 0; // Global integer for saving the amount of time the Wi-Fi was disconnected in seconds
+
 // Function for connecting arduino to Wi-Fi
 void connectWifi() {
     // Check arduino EPS32 firmware version
@@ -115,49 +116,98 @@ void connectBroker() {
     Serial.println();
 }
 
+// These 2 values are used by the OLED-Display library but are not outside accessible
+// Therefore the values were re-defined here, that way they could be used for command chaining
+#define BLACK 2
+#define WHITE 1
+
+// Class that will handle the OLED-Display, this class will use command-chaining for the display
+// This will clean up all te parts of the code where the display is changed
+// All (used) default commands for the OLED-display have been added in a way that it allows command chaining
+class display {
+public:
+    display& begin() {
+        oledDisplay.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+        return *this;
+    }
+    display& clear() {
+        oledDisplay.clearDisplay();
+        return *this;
+    }
+    display& setCursor(int16_t x = 0, int16_t y = 0) {
+        oledDisplay.setCursor(x,y);
+        return *this;
+    }
+    display& println(const String& content = "") {
+        oledDisplay.println(content);
+        return *this;
+    }
+    display& print(const String& content = "") {
+        oledDisplay.println(content);
+        return *this;
+    }
+    display& setTextSize(int16_t s = 0) {
+        oledDisplay.setTextSize(s);
+        return *this;
+    }
+    display& setColor(const int color) {
+        oledDisplay.setTextColor(color);
+        return *this;
+    }
+    display& drawBitmap(const unsigned char PROGMEM bitmap[]) {
+        oledDisplay.drawBitmap(5,5,bitmap,11,8,WHITE);
+        return *this;
+    }
+    display& show() {
+        oledDisplay.display();
+        return *this;
+    }
+
+};
+
+display display;
+
 // Setup function for all the values and connections
 void setup() {
 
     // Create serial connection and wait for it to become available.
     Serial.begin(9600);
-    dht11.begin(); // initialize the sensor
+    dht11.begin(); // Initialize the sensor
 
     while (!Serial) {
     }
 
-    // IInitialize OLED display
-    oledDisplay.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-
-    // Initialize WELCOME message
-    oledDisplay.setTextSize(3);
-    oledDisplay.setTextColor(WHITE);
-    oledDisplay.clearDisplay();
-    oledDisplay.setCursor(0, 0);
-    oledDisplay.println("WELCOME");
-    oledDisplay.display();;
+    // Initialize OLED-Display and show the WELCOME message
+    display.begin()
+            .setTextSize(3)
+            .setColor(WHITE)
+            .clear()
+            .setCursor(0, 0)
+            .println("WELCOME")
+            .show();
 
     delay(2000);
 
     // Display initialization WI-FI
-    oledDisplay.clearDisplay();
-    oledDisplay.setTextSize(1);
-    oledDisplay.setCursor(0, 0);
-    oledDisplay.println("WIFI STATUS:");
-    oledDisplay.println("PENDING");
-    oledDisplay.display();;
+    display.clear()
+            .setTextSize(1)
+            .setCursor(0, 0)
+            .println("WIFI STATUS:")
+            .println("PENDING")
+            .show();
 
     // Connect to Wi-Fi
     connectWifi();
 
     // Display initialization MQTT connection
-    oledDisplay.clearDisplay();
-    oledDisplay.setCursor(0, 0);
-    oledDisplay.println("WIFI STATUS:");
-    oledDisplay.println("CONNECTED");
-    oledDisplay.println();
-    oledDisplay.println("MQTT STATUS");
-    oledDisplay.println("PENDING");
-    oledDisplay.display();;
+    display.clear()
+            .setCursor(0, 0)
+            .println("WIFI STATUS:")
+            .println("CONNECTED")
+            .println()
+            .println("MQTT STATUS")
+            .println("PENDING")
+            .show();
 
     // Connect to MQTT broker
     connectBroker();
@@ -169,16 +219,16 @@ void setup() {
     mqttClient.subscribe("/IO");
 
     // Display all connections are green and the program will soon start
-    oledDisplay.clearDisplay();
-    oledDisplay.setCursor(0, 0);
-    oledDisplay.println("WIFI STATUS:");
-    oledDisplay.println("CONNECTED");
-    oledDisplay.println();
-    oledDisplay.println("MQTT STATUS:");
-    oledDisplay.println("CONNECTED");
-    oledDisplay.println();
-    oledDisplay.println("STARTING PROGRAM...");
-    oledDisplay.display();
+    display.clear()
+            .setCursor(0, 0)
+            .println("WIFI STATUS:")
+            .println("CONNECTED")
+            .println()
+            .println("MQTT STATUS:")
+            .println("CONNECTED")
+            .println()
+            .println("STARTING PROGRAM...")
+            .show();
 }
 
 void loop() {
@@ -191,20 +241,22 @@ void loop() {
         connStatus();
 
         // Make display show current changes ot the display
-        oledDisplay.display();
+        display.show();
 
         delay(2000);
 
+        // Add 2 seconds to the disconnectedTime (loop has a 2 seconds delay)
         disconnectedTime = disconnectedTime + 2;
 
     }
 
+    // If the arduino was disconnected then the disconnectedTime will not be zero and a log-message will be made
     if (disconnectedTime != 0) {
         eclipseLogMessage(
                 "WiFi disconnected",
-                (int)disconnectedTime,
+                (int) disconnectedTime,
                 (String) "Wifi connection was lost, time (seconds) offline is " + disconnectedTime);
-        disconnectedTime  = 0;
+        disconnectedTime = 0;
     }
 
     // Check if broker is still connected to the arduino
@@ -213,16 +265,16 @@ void loop() {
         connectBroker();
     }
 
-    // Checks if there are any messages from the MQTT
+    // Checks if there are any messages from the MQTT broker
     // Also sends out a pulse so the connection will not be broken due to inactivity
     mqttClient.poll();
 
     // Set display text size and color
-    oledDisplay.setTextSize(1);
-    oledDisplay.setTextColor(WHITE);
+    display.setTextSize(1)
+            .setColor(WHITE);
 
     // Read humidity
-    float humi  = dht11.readHumidity();
+    float humi = dht11.readHumidity();
     // Read temperature as Celsius
     float tempC = dht11.readTemperature();
 
@@ -236,19 +288,19 @@ void loop() {
         String Temp = String(tempC, 1) + " C";
 
         // Clear display for new values
-        oledDisplay.clearDisplay();
-        oledDisplay.setCursor(5, 30);
-        oledDisplay.println("Humidity");
-        oledDisplay.setCursor(80, 30);
-        oledDisplay.println("Temp");
+        display.clear()
+                .setCursor(5, 30)
+                .println("Humidity")
+                .setCursor(80, 30)
+                .println("Temp")
 
-        // Change cursor location and display humidity
-        oledDisplay.setCursor(5, 45);
-        oledDisplay.println(humiString);
+                // Change cursor location and display humidity
+                .setCursor(5, 45)
+                .println(humiString)
 
-        // Change cursor location and display temperature
-        oledDisplay.setCursor(80, 45);
-        oledDisplay.println(Temp);
+                // Change cursor location and display temperature
+                .setCursor(80, 45)
+                .println(Temp);
 
         // check connection before sending anything to the MQTT broker
         connStatus();
@@ -259,7 +311,7 @@ void loop() {
     }
 
     // Make display show current changes ot the display
-    oledDisplay.display();
+    display.show();
 
 }
 
@@ -311,7 +363,7 @@ void eclipseSensorMessage (int humi, const String& temp, int conn) {
 
     // Prepare json for sending it to the MQTT broker
     char jsonBuffer[512];
-    serializeJsonPretty(doc, jsonBuffer); // print to client
+    serializeJsonPretty(doc, jsonBuffer);
 
     // Send the serialized data to the MQTT broker on the given topic
     mqttClient.beginMessage("/sensor/arduino");
@@ -323,7 +375,7 @@ void eclipseSensorMessage (int humi, const String& temp, int conn) {
 // Function for getting the connection status and strength
 void connStatus() {
 
-    // Get wifi signal strength
+    // Get Wi-Fi signal strength
     signalStrength = (int) WiFi.RSSI();
 
     // Set the global signal status to the string converted signal strength
@@ -334,24 +386,24 @@ void connStatus() {
     if (WiFi.status() == 0) {
 
         // Clear entire display, so it is clear that there is something wrong
-        oledDisplay.clearDisplay();
-        oledDisplay.drawBitmap(5,5,noConn,11,8,WHITE);
+        display.clear()
+                .drawBitmap(noConn);
 
         // If the Wi-Fi is disconnected  set the status to "DISCONNECTED" and set the connected value to False
         status = "DISCONNECTED";
         connected = false;
 
     } else if (signalStrength >= -50) {
-        oledDisplay.drawBitmap(5,5,excellentConn,11,8,WHITE);
+        display.drawBitmap(excellentConn);
     } else if (signalStrength >= -60) {
-        oledDisplay.drawBitmap(5,5,goodConn,11,8,WHITE);
+        display.drawBitmap(goodConn);
     } else if (signalStrength >= -70) {
-        oledDisplay.drawBitmap(5,5,stabletConn,11,8,WHITE);
+        display.drawBitmap(stabletConn);
     } else if (signalStrength >= -80) {
-        oledDisplay.drawBitmap(5,5,badConn,11,8,WHITE);
+        display.drawBitmap(badConn);
     }
 
-    // If the wifi is disconnected (determent by previous if statement) execute the following code
+    // If the Wi-Fi is disconnected (determent by previous if statement) execute the following code
     if (!connected && WiFi.status() != 0) {
         // To be safe, disconnect arduino Wi-Fi (will not return errors if already disconnected)
         WiFi.disconnect();
@@ -368,8 +420,8 @@ void connStatus() {
     }
 
     // Print actual strength on display, when disconnected the strength will be "DISCONNECTED"
-    oledDisplay.setCursor(20, 5);
-    oledDisplay.println(status);
+    display.setCursor(20, 5)
+            .println(status);
 
 }
 
@@ -390,7 +442,7 @@ void eclipseLogMessage (
 
     // Serialize json doc for MQTT
     char jsonBuffer[512];
-    serializeJsonPretty(doc, jsonBuffer); // print to client
+    serializeJsonPretty(doc, jsonBuffer);
 
     // Publish serialized json doc to the /log topic
     mqttClient.beginMessage("/log/arduino");
