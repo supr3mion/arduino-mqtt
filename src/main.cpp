@@ -9,6 +9,10 @@
 // stores the sensitive information needed for the program to work
 #include "secrets.h"
 
+// Defines wired connection the DHT-11 (KY-015)
+#define DHT11_PIN 2
+DHT dht11(DHT11_PIN, DHT11);
+
 // Name and password off the Wi-Fi connection respectively
 char ssid[] = SECRET_WIFI_SSID;    // your network SSID (name)
 char pass[] = SECRET_WIFI_PASS;    // your network password
@@ -35,38 +39,39 @@ void setup() {
 
     // Create serial connection and wait for it to become available.
     Serial.begin(9600);
+    dht11.begin(); // initialize the sensor
+
     while (!Serial) {
-        ;
     }
 
-    // Connect to Wi-Fi
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(ssid);
-    while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
-        // failed, retry
-        Serial.print(".");
-        delay(5000);
-    }
-
-    Serial.println("You're connected to the network");
-    Serial.println();
-
-    // Provide a username and password for authentication
-    mqttClient.setUsernamePassword(mqtt_user, mqtt_pass);
-
-    Serial.print("Attempting to connect to the MQTT broker.");
-
-    if (!mqttClient.connect(broker, port)) {
-        Serial.print("MQTT connection failed! Error code = ");
-        Serial.println(mqttClient.connectError());
-
-        while (1);
-    }
-
-    Serial.println("You're connected to the MQTT broker!");
-
-    Serial.print("Waiting for messages on topic: ");
-    Serial.println(subscribe_topic);
+//    // Connect to Wi-Fi
+//    Serial.print("Attempting to connect to WPA SSID: ");
+//    Serial.println(ssid);
+//    while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
+//        // failed, retry
+//        Serial.print(".");
+//        delay(5000);
+//    }
+//
+//    Serial.println("You're connected to the network");
+//    Serial.println();
+//
+//    // Provide a username and password for authentication
+//    mqttClient.setUsernamePassword(mqtt_user, mqtt_pass);
+//
+//    Serial.print("Attempting to connect to the MQTT broker.");
+//
+//    if (!mqttClient.connect(broker, port)) {
+//        Serial.print("MQTT connection failed! Error code = ");
+//        Serial.println(mqttClient.connectError());
+//
+//        while (1);
+//    }
+//
+//    Serial.println("You're connected to the MQTT broker!");
+//
+//    Serial.print("Waiting for messages on topic: ");
+//    Serial.println(subscribe_topic);
 
     // Set function for receiving MQTT messages from the subscribed topics
     mqttClient.onMessage(eclipseReceived);
@@ -79,7 +84,29 @@ void loop() {
 
     // Checks if there are any messages from the MQTT
     // Also sends out a pulse so the connection will not be broken due to inactivity
-    mqttClient.poll();
+//    mqttClient.poll();
+
+
+    // Read humidity
+    float humi  = dht11.readHumidity();
+    // Read temperature as Celsius
+    float tempC = dht11.readTemperature();
+
+    // Check if any reads failed
+    if (isnan(humi) || isnan(tempC)) {
+        Serial.println("Failed to read from DHT11 sensor!");
+    } else {
+
+        // Turn sensor values into readable strings
+        String humiString = String((int) humi) + "%";
+        String Temp = String(tempC, 1) + " C";
+
+        // Log values in terminal
+        Serial.println("Humidity: " + humiString);
+        Serial.println("Temperature: " + Temp);
+        Serial.println();
+
+    }
 
 }
 
