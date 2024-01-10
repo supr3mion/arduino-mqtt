@@ -6,31 +6,40 @@
 #include <ArduinoJson.h>
 #include <DHT.h>
 
+// stores the sensitive information needed for the program to work
 #include "secrets.h"
 
+// Name and password off the Wi-Fi connection respectively
 char ssid[] = SECRET_WIFI_SSID;    // your network SSID (name)
 char pass[] = SECRET_WIFI_PASS;    // your network password
 
+// Name and password for the MQTT broker respectively
 char mqtt_user[] = SECRET_MQTT_USER;
 char mqtt_pass[] = SECRET_MQTT_PASS;
 
-
+// Prepare tot connect to Wi-Fi
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
-const char broker[] = SECRET_MQTT_IP; //IP address of the EMQX broker.
+// Required broker information, includes ip and port of the broker itself
+// Also includes the subscribed topic
+const char broker[] = SECRET_MQTT_IP; //IP address of the eclipse broker.
 int        port     = 1883;
-const char subscribe_topic[]  = "/hello";
-const char publish_topic[]  = "/hello/world";
+const char subscribe_topic[]  = "/IO"; // Topic for sending information to subscribed devices
 
+// Define class, this function is build after the loop function
+void eclipseReceived(int messageSize);
+
+// Setup function for all the values and connections
 void setup() {
+
     // Create serial connection and wait for it to become available.
     Serial.begin(9600);
     while (!Serial) {
         ;
     }
 
-    // Connect to WiFi
+    // Connect to Wi-Fi
     Serial.print("Attempting to connect to WPA SSID: ");
     Serial.println(ssid);
     while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
@@ -42,7 +51,7 @@ void setup() {
     Serial.println("You're connected to the network");
     Serial.println();
 
-    // You can provide a username and password for authentication
+    // Provide a username and password for authentication
     mqttClient.setUsernamePassword(mqtt_user, mqtt_pass);
 
     Serial.print("Attempting to connect to the MQTT broker.");
@@ -56,40 +65,55 @@ void setup() {
 
     Serial.println("You're connected to the MQTT broker!");
 
-    Serial.print("Subscribing to topic: ");
-    Serial.println(subscribe_topic);
-
-    // subscribe to a topic
-    mqttClient.subscribe(subscribe_topic);
-
-    // topics can be unsubscribed using:
-    // mqttClient.unsubscribe(topic);
-
     Serial.print("Waiting for messages on topic: ");
     Serial.println(subscribe_topic);
+
+    // Set function for receiving MQTT messages from the subscribed topics
+    mqttClient.onMessage(eclipseReceived);
 }
 
 void loop() {
-    int messageSize = mqttClient.parseMessage();
-    if (messageSize) {
-        // we received a message, print out the topic and contents
-        Serial.print("Received a message with topic '");
-        Serial.print(mqttClient.messageTopic());
-        Serial.print("', length ");
-        Serial.print(messageSize);
-        Serial.println(" bytes:");
 
-        // use the Stream interface to print the contents
-        while (mqttClient.available()) {
-            Serial.print((char)mqttClient.read());
-        }
-        Serial.println();
+    // Loop delay
+    delay(2000);
+
+    // Checks if there are any messages from the MQTT
+    // Also sends out a pulse so the connection will not be broken due to inactivity
+    mqttClient.poll();
+
+}
+
+// Message receive function, logs incoming message and topic in the console
+void eclipseReceived(int messageSize) {
+
+    // Prepare string that will contain the full message from the MQTT
+    String fullMessage = "";
+
+    // Read the message from the MQTT
+    while (mqttClient.available()) {
+        fullMessage += (char) mqttClient.read();
     }
 
-    // send message, the Print interface can be used to set the message contents
-    delay(3000);
-    mqttClient.beginMessage(publish_topic);
-    mqttClient.print(random(1000));
-    mqttClient.endMessage();
+    // Store topic in separate value
+    const String topic = mqttClient.messageTopic();
+
+    // Deserialize json message from MQTT, if message is not json the results will be empty
+    StaticJsonDocument<256> doc;
+    deserializeJson(doc, mqttClient);
+
+    // If received message from MQTT was json, store "msg" and "cmd" in separate value for later use
+    String message = doc["msg"];
+    const String command = doc["cmd"];
+
+    // Print all the information from the incoming MQTT message in the console
+    Serial.print("Received a message with topic '");
+    Serial.println(topic);
+
+    Serial.println("Full message:");
+    Serial.println(fullMessage);
+    Serial.println();
+
+    Serial.print("Message: ");
+    Serial.println(message);
 
 }
