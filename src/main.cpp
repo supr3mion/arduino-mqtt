@@ -12,14 +12,14 @@
 // Stores the bitmap images fo the oled screen
 #include <bitmap.cpp>
 
-// SetupDHT-11 (KY-015)
+// Setup DHT-11 (KY-015)
 #define DHT11_PIN 2
 DHT dht11(DHT11_PIN, DHT11);
 
 // Setup OLED-display
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET     -1
+#define SCREEN_WIDTH    128
+#define SCREEN_HEIGHT   64
+#define OLED_RESET      -1
 Adafruit_SSD1306 oledDisplay(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Name and password off the Wi-Fi connection respectively
@@ -99,7 +99,7 @@ void connectBroker() {
     Serial.println("Attempting to connect to the MQTT broker.");
 
     // Pre-define the port integer
-    int port     = 1883;
+    int port = 1883;
 
     // Keep trying to connect to the broker
     while (!mqttClient.connect(broker, port)) {
